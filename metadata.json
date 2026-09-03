@@ -1,0 +1,6 @@
+{
+  "name": "Instagram SMM Panel",
+  "description": "Production-ready Instagram Social Media Management (SMM) web panel with customer and admin portals, legitimate services, orders, payments, official Meta OAuth, and analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
