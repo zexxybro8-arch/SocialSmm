@@ -1,65 +1,186 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { 
+  User as FirebaseUser,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged,
+  sendPasswordResetEmail,
+} from 'firebase/auth';
+import { auth } from '../config/firebase';
+import { getUserProfile, createUserProfile, updateUserProfile, UserProfile } from '../services/userService';
 import { User, Customer, Admin } from '../types/database';
-import { api } from '../api/client';
+import { seedCatalogIfEmpty } from '../services/firestoreService';
 
 export interface RegisterPayload {
-  fullName?: string;
-  name?: string;
   email: string;
-  username?: string;
+  username: string;
   password: string;
+  name: string;
+  fullName?: string;
+  mobile?: string;
   mobileNo?: string;
   phone?: string;
-  instagramHandle?: string;
 }
 
 interface AuthContextType {
+  firebaseUser: FirebaseUser | null;
   user: User | null;
   customerProfile: Customer | null;
   adminProfile: Admin | null;
   isLoading: boolean;
-  login: (emailOrLogin: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
   register: (data: RegisterPayload) => Promise<void>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [customerProfile, setCustomerProfile] = useState<Customer | null>(null);
   const [adminProfile, setAdminProfile] = useState<Admin | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  const initAuth = async () => {
-    try {
-      const res = await api.getMe();
-      if (res && res.user) {
-        setUser(res.user);
-        setCustomerProfile(res.customerProfile || null);
-        setAdminProfile(res.adminProfile || null);
-      } else {
-        setUser(null);
-      }
-    } catch {
-      setUser(null);
-    } finally {
-      setIsLoading(false);
+  // Helper to construct App User and CustomerProfile from Firestore doc & Firebase User
+  const syncProfileState = (fbUser: FirebaseUser, profile: UserProfile | null) => {
+    if (!profile) {
+      // Fallback user object if profile document is being created
+      const fallbackUser: User = {
+        id: fbUser.uid,
+        email: fbUser.email || '',
+        username: fbUser.displayName || fbUser.email?.split('@')[0] || 'user',
+        role: 'customer',
+        fullName: fbUser.displayName || 'Customer',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        status: 'active',
+      };
+      setUser(fallbackUser);
+      setCustomerProfile({
+        id: fbUser.uid,
+        userId: fbUser.uid,
+        username: fallbackUser.username,
+        balance: 0.0,
+        spent: 0.0,
+        customDiscountPercent: 0,
+        fullName: fallbackUser.fullName,
+        email: fallbackUser.email,
+        createdAt: fallbackUser.createdAt,
+        updatedAt: fallbackUser.updatedAt,
+      });
+      setAdminProfile(null);
+      return;
+    }
+
+    const appUser: User = {
+      id: profile.uid,
+      email: profile.email,
+      username: profile.username,
+      role: profile.role,
+      fullName: profile.fullName || profile.name || 'Customer',
+      phone: profile.phone || profile.mobile || '',
+      status: profile.status || 'active',
+      createdAt: profile.createdAt,
+      updatedAt: profile.updatedAt,
+    };
+    setUser(appUser);
+
+    if (profile.role === 'admin') {
+      setAdminProfile({
+        id: `adm_${profile.uid}`,
+        userId: profile.uid,
+        department: 'System Operations',
+        permissions: ['all', 'manage_services', 'manage_orders', 'manage_customers'],
+        createdAt: profile.createdAt,
+      });
+      setCustomerProfile({
+        id: profile.uid,
+        userId: profile.uid,
+        username: profile.username,
+        balance: profile.walletBalance ?? 0.0,
+        spent: profile.spent ?? 0.0,
+        customDiscountPercent: 0,
+        fullName: appUser.fullName,
+        email: appUser.email,
+        createdAt: profile.createdAt,
+        updatedAt: profile.updatedAt,
+      });
+    } else {
+      setAdminProfile(null);
+      setCustomerProfile({
+        id: profile.uid,
+        userId: profile.uid,
+        username: profile.username,
+        balance: profile.walletBalance ?? 0.0,
+        spent: profile.spent ?? 0.0,
+        customDiscountPercent: 0,
+        fullName: appUser.fullName,
+        email: appUser.email,
+        phone: profile.phone || profile.mobile,
+        createdAt: profile.createdAt,
+        updatedAt: profile.updatedAt,
+      });
     }
   };
 
+  // Firebase Auth State Listener (persists session across reloads/restarts)
   useEffect(() => {
-    initAuth();
+    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
+      setFirebaseUser(fbUser);
+      if (fbUser) {
+        try {
+          let profile = await getUserProfile(fbUser.uid);
+          if (!profile) {
+            // Auto-create document if missing
+            profile = await createUserProfile(fbUser.uid, {
+              email: fbUser.email || '',
+              username: fbUser.displayName || fbUser.email?.split('@')[0] || 'user',
+              name: fbUser.displayName || 'Customer',
+              walletBalance: 0,
+              role: 'customer',
+            });
+          }
+          syncProfileState(fbUser, profile);
+          seedCatalogIfEmpty();
+        } catch (e) {
+          console.error('Error fetching Firestore user profile:', e);
+          syncProfileState(fbUser, null);
+        }
+      } else {
+        setUser(null);
+        setCustomerProfile(null);
+        setAdminProfile(null);
+      }
+      setIsLoading(false);
+    });
+
+    return () => unsubscribe();
   }, []);
 
-  const login = async (emailOrLogin: string, password: string) => {
+  const login = async (email: string, password: string) => {
     setIsLoading(true);
     try {
-      const res = await api.login(emailOrLogin, password);
-      setUser(res.user);
-      setCustomerProfile(res.customerProfile || null);
-      setAdminProfile(res.adminProfile || null);
+      const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
+      const fbUser = userCredential.user;
+      setFirebaseUser(fbUser);
+
+      let profile = await getUserProfile(fbUser.uid);
+      if (!profile) {
+        profile = await createUserProfile(fbUser.uid, {
+          email: fbUser.email || email.trim(),
+          username: fbUser.displayName || email.split('@')[0] || 'user',
+          name: fbUser.displayName || 'Customer',
+          walletBalance: 0,
+          role: 'customer',
+        });
+      }
+      syncProfileState(fbUser, profile);
+    } catch (err: any) {
+      throw err;
     } finally {
       setIsLoading(false);
     }
@@ -68,36 +189,68 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const register = async (data: RegisterPayload) => {
     setIsLoading(true);
     try {
-      const res = await api.register(data);
-      setUser(res.user);
-      setCustomerProfile(res.customerProfile || null);
-      setAdminProfile(null);
+      const trimmedEmail = data.email.trim();
+      const trimmedUsername = data.username.trim();
+      const trimmedName = (data.name || data.fullName || '').trim();
+      const mobileNumber = (data.mobile || data.mobileNo || data.phone || '').trim();
+
+      // 1. Create Firebase Auth account (passwords handled securely by Firebase Auth)
+      const userCredential = await createUserWithEmailAndPassword(auth, trimmedEmail, data.password);
+      const fbUser = userCredential.user;
+      setFirebaseUser(fbUser);
+
+      // 2. Create Firestore users/{uid} document with walletBalance: 0 (NEVER store password in Firestore)
+      const profile = await createUserProfile(fbUser.uid, {
+        email: trimmedEmail,
+        username: trimmedUsername,
+        name: trimmedName,
+        mobile: mobileNumber,
+        role: 'customer',
+        walletBalance: 0,
+      });
+
+      // 3. Sync state
+      syncProfileState(fbUser, profile);
+      seedCatalogIfEmpty();
+    } catch (err: any) {
+      throw err;
     } finally {
       setIsLoading(false);
     }
   };
 
   const logout = async () => {
-    await api.logout();
+    try {
+      await signOut(auth);
+    } catch (e) {
+      console.error('Error signing out:', e);
+    }
+    setFirebaseUser(null);
     setUser(null);
     setCustomerProfile(null);
     setAdminProfile(null);
   };
 
   const refreshProfile = async () => {
+    if (!auth.currentUser) return;
     try {
-      const res = await api.getMe();
-      if (res && res.user) {
-        setUser(res.user);
-        setCustomerProfile(res.customerProfile || null);
-        setAdminProfile(res.adminProfile || null);
+      const profile = await getUserProfile(auth.currentUser.uid);
+      if (profile) {
+        syncProfileState(auth.currentUser, profile);
       }
-    } catch {}
+    } catch (e) {
+      console.error('Error refreshing profile:', e);
+    }
+  };
+
+  const resetPassword = async (email: string) => {
+    await sendPasswordResetEmail(auth, email.trim());
   };
 
   return (
     <AuthContext.Provider
       value={{
+        firebaseUser,
         user,
         customerProfile,
         adminProfile,
@@ -106,6 +259,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         register,
         logout,
         refreshProfile,
+        resetPassword,
       }}
     >
       {children}

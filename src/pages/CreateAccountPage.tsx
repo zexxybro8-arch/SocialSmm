@@ -11,7 +11,6 @@ import {
   Eye, 
   EyeOff,
   ShieldCheck,
-  Zap
 } from 'lucide-react';
 import { BRANDING } from '../config/branding';
 import { useAuth } from '../auth/AuthContext';
@@ -39,6 +38,23 @@ export const CreateAccountPage: React.FC<CreateAccountPageProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  const getFriendlyErrorMessage = (error: any): string => {
+    const code = error?.code || '';
+    if (code === 'auth/email-already-in-use') {
+      return 'An account with this email address already exists. Please sign in instead.';
+    }
+    if (code === 'auth/weak-password') {
+      return 'Password should be at least 6 characters long.';
+    }
+    if (code === 'auth/invalid-email') {
+      return 'Please provide a valid email format (e.g. name@example.com).';
+    }
+    if (code === 'auth/network-request-failed') {
+      return 'Network connection error. Please check your internet connection.';
+    }
+    return error.message || 'Registration failed. Please verify your details.';
+  };
 
   const validateForm = (): string | null => {
     const trimmedEmail = email.trim();
@@ -78,18 +94,18 @@ export const CreateAccountPage: React.FC<CreateAccountPageProps> = ({
         email: email.trim(),
         username: username.trim(),
         password,
-        fullName: name.trim(),
         name: name.trim(),
+        fullName: name.trim(),
+        mobile: mobileNo.trim() || undefined,
         mobileNo: mobileNo.trim() || undefined,
-        phone: mobileNo.trim() || undefined,
       });
 
       setSuccessMessage('Account created successfully! Preparing your dashboard...');
       setTimeout(() => {
         onRegisterSuccess('customer');
-      }, 700);
+      }, 500);
     } catch (err: any) {
-      setErrorMessage(err.message || 'Registration failed. Please verify your details.');
+      setErrorMessage(getFriendlyErrorMessage(err));
     } finally {
       setIsLoading(false);
     }
@@ -292,7 +308,7 @@ export const CreateAccountPage: React.FC<CreateAccountPageProps> = ({
           {/* Secure Guarantee */}
           <div className="mt-6 pt-4 border-t border-zinc-800/80 flex items-center justify-center space-x-2 text-[11px] text-zinc-400">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-            <span>256-Bit Encrypted Data & Meta API Verified</span>
+            <span>Encrypted Firebase Authentication & Zero Plaintext Credentials</span>
           </div>
         </div>
       </div>

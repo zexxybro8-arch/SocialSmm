@@ -3,18 +3,14 @@ import {
   ArrowLeft, 
   Lock, 
   Mail, 
-  User, 
   AlertCircle, 
-  CheckCircle2, 
   Eye, 
   EyeOff, 
   ShieldCheck, 
-  Zap,
   Sparkles
 } from 'lucide-react';
 import { BRANDING } from '../config/branding';
 import { useAuth } from '../auth/AuthContext';
-import { api } from '../api/client';
 
 interface LoginPageProps {
   onBackToLanding: () => void;
@@ -27,9 +23,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   onGoToRegister,
   onLoginSuccess,
 }) => {
-  const { login } = useAuth();
+  const { login, resetPassword } = useAuth();
 
-  const [loginOrEmail, setLoginOrEmail] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
@@ -39,17 +35,41 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
   // Forgot password modal state
   const [forgotModalOpen, setForgotModalOpen] = useState(false);
-  const [forgotIdentifier, setForgotIdentifier] = useState('');
+  const [forgotEmail, setForgotEmail] = useState('');
   const [forgotLoading, setForgotLoading] = useState(false);
   const [forgotStatus, setForgotStatus] = useState<string | null>(null);
+
+  const getFriendlyErrorMessage = (error: any): string => {
+    const code = error?.code || '';
+    if (
+      code === 'auth/invalid-credential' || 
+      code === 'auth/wrong-password' || 
+      code === 'auth/user-not-found'
+    ) {
+      return 'Invalid email or password.';
+    }
+    if (code === 'auth/invalid-email') {
+      return 'Please enter a valid email address.';
+    }
+    if (code === 'auth/too-many-requests') {
+      return 'Too many failed attempts. Please wait a moment and try again.';
+    }
+    if (code === 'auth/user-disabled') {
+      return 'This account has been disabled. Please contact support.';
+    }
+    if (code === 'auth/network-request-failed') {
+      return 'Network connection error. Please check your internet connection.';
+    }
+    return error.message || 'Invalid email or password.';
+  };
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
-    const identifier = loginOrEmail.trim();
-    if (!identifier) {
-      setErrorMessage('Please enter your username or email address.');
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      setErrorMessage('Please enter your email address.');
       return;
     }
 
@@ -61,13 +81,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     setIsLoading(true);
 
     try {
-      await login(identifier, password);
-      // Fetch user profile to verify role
-      const res = await api.getMe();
-      const userRole = (res.user?.role === 'admin') ? 'admin' : 'customer';
-      onLoginSuccess(userRole);
+      await login(trimmedEmail, password);
+      onLoginSuccess('customer');
     } catch (err: any) {
-      setErrorMessage(err.message || 'Invalid login credentials. Please check your details and try again.');
+      setErrorMessage(getFriendlyErrorMessage(err));
     } finally {
       setIsLoading(false);
     }
@@ -75,14 +92,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
   const handleForgotPasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!forgotIdentifier.trim()) return;
+    if (!forgotEmail.trim()) return;
 
     setForgotLoading(true);
     try {
-      const res = await api.forgotPassword(forgotIdentifier.trim());
-      setForgotStatus(res.message || 'Password recovery instructions dispatched to your email.');
+      await resetPassword(forgotEmail.trim());
+      setForgotStatus('Password recovery instructions have been sent to your email.');
     } catch (err: any) {
-      setForgotStatus(err.message || 'Recovery request processed.');
+      setForgotStatus(getFriendlyErrorMessage(err));
     } finally {
       setForgotLoading(false);
     }
@@ -123,7 +140,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
               Welcome Back
             </h1>
             <p className="text-xs text-zinc-400 mt-1">
-              Sign in to manage your orders, balances, and real-time social metrics
+              Sign in with Firebase Authentication to access your orders and dashboard
             </p>
           </div>
 
@@ -137,20 +154,20 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
           {/* Login Form */}
           <form onSubmit={handleLoginSubmit} className="space-y-4">
-            {/* 1. Login or Email */}
+            {/* 1. Email */}
             <div>
               <label className="block text-xs font-semibold text-zinc-300 mb-1.5">
-                Login or email
+                Email Address
               </label>
               <div className="relative">
                 <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 pointer-events-none" />
                 <input
-                  id="login-identifier"
-                  type="text"
+                  id="login-email"
+                  type="email"
                   required
-                  value={loginOrEmail}
-                  onChange={(e) => setLoginOrEmail(e.target.value)}
-                  placeholder="Username or email address"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="name@example.com"
                   className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-zinc-950/90 border border-zinc-800 text-white text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition placeholder:text-zinc-600"
                 />
               </div>
@@ -166,7 +183,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                   type="button"
                   id="forgot-pwd-trigger"
                   onClick={() => {
-                    setForgotIdentifier(loginOrEmail);
+                    setForgotEmail(email);
                     setForgotStatus(null);
                     setForgotModalOpen(true);
                   }}
@@ -244,7 +261,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
           {/* Secure Verification Footer */}
           <div className="mt-6 pt-4 border-t border-zinc-800/80 flex items-center justify-center space-x-2 text-[11px] text-zinc-400">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Encrypted Authentication & Session Control</span>
+            <span>Firebase Auth & Cloud Firestore Synchronized</span>
           </div>
         </div>
       </div>
@@ -255,7 +272,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
           <div className="w-full max-w-sm rounded-3xl border border-zinc-800 bg-[#0C1220] p-6 shadow-2xl text-zinc-100">
             <h3 className="text-lg font-bold text-white">Reset Account Password</h3>
             <p className="text-xs text-zinc-400 mt-1">
-              Enter your login username or email address and we will dispatch recovery instructions.
+              Enter your email address and Firebase will dispatch recovery instructions.
             </p>
 
             {forgotStatus ? (
@@ -276,14 +293,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({
               <form onSubmit={handleForgotPasswordSubmit} className="mt-4 space-y-3.5">
                 <div>
                   <label className="block text-xs font-semibold text-zinc-300 mb-1">
-                    Login or Email
+                    Email Address
                   </label>
                   <input
-                    type="text"
+                    type="email"
                     required
-                    value={forgotIdentifier}
-                    onChange={(e) => setForgotIdentifier(e.target.value)}
-                    placeholder="Username or email"
+                    value={forgotEmail}
+                    onChange={(e) => setForgotEmail(e.target.value)}
+                    placeholder="name@example.com"
                     className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-950 border border-zinc-800 text-white text-xs focus:outline-none focus:border-emerald-500"
                   />
                 </div>

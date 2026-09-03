@@ -14,30 +14,30 @@ import {
   AuditLog,
   PlatformCategory
 } from '../types/database';
-
-const TOKEN_KEY = 'instasmm_auth_token';
+import { auth } from '../config/firebase';
+import { 
+  getCategoriesFromFirestore, 
+  getServicesFromFirestore, 
+  getOrdersForUser, 
+  createOrderInFirestore, 
+  getTransactionsForUser,
+  INITIAL_SERVICES 
+} from '../services/firestoreService';
 
 class ApiClient {
-  private getToken(): string | null {
-    try {
-      return localStorage.getItem(TOKEN_KEY);
-    } catch {
-      return null;
-    }
-  }
-
-  public setToken(token: string | null) {
-    try {
-      if (token) {
-        localStorage.setItem(TOKEN_KEY, token);
-      } else {
-        localStorage.removeItem(TOKEN_KEY);
+  private async getAuthToken(): Promise<string | null> {
+    if (auth.currentUser) {
+      try {
+        return await auth.currentUser.getIdToken();
+      } catch {
+        return null;
       }
-    } catch {}
+    }
+    return null;
   }
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-    const token = this.getToken();
+    const token = await this.getAuthToken();
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       ...(options.headers as Record<string, string> || {}),
@@ -60,69 +60,14 @@ class ApiClient {
     return data;
   }
 
-  // Auth
-  async login(emailOrLogin: string, password: string): Promise<{
-    user: User;
-    token: string;
-    customerProfile?: Customer | null;
-    adminProfile?: Admin | null;
-  }> {
-    const res = await this.request<any>('/api/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email: emailOrLogin, login: emailOrLogin, password })
-    });
-    this.setToken(res.token);
-    return res;
-  }
-
-  async register(data: { 
-    fullName?: string; 
-    name?: string; 
-    email: string; 
-    username?: string; 
-    password: string; 
-    mobileNo?: string; 
-    phone?: string; 
-    instagramHandle?: string 
-  }): Promise<{
-    user: User;
-    token: string;
-    customerProfile?: Customer | null;
-  }> {
-    const res = await this.request<any>('/api/auth/register', {
-      method: 'POST',
-      body: JSON.stringify(data)
-    });
-    this.setToken(res.token);
-    return res;
-  }
-
-  async getMe(): Promise<{
-    user: User;
-    customerProfile?: Customer | null;
-    adminProfile?: Admin | null;
-  }> {
-    return this.request('/api/auth/me');
-  }
-
-  async forgotPassword(email: string): Promise<{ message: string }> {
-    return this.request('/api/auth/forgot-password', {
-      method: 'POST',
-      body: JSON.stringify({ email })
-    });
-  }
-
-  async logout(): Promise<void> {
-    try {
-      await this.request('/api/auth/logout', { method: 'POST' });
-    } catch {}
-    this.setToken(null);
-  }
-
-  // Categories
+  // Categories (Direct Firestore + fallback)
   async getCategories(): Promise<PlatformCategory[]> {
-    const res = await this.request<{ success: boolean; categories: PlatformCategory[] }>('/api/categories');
-    return res.categories;
+    try {
+      return await getCategoriesFromFirestore();
+    } catch {
+      const res = await this.request<{ success: boolean; categories: PlatformCategory[] }>('/api/categories');
+      return res.categories;
+    }
   }
 
   async createCategory(data: Partial<PlatformCategory>): Promise<PlatformCategory> {
@@ -147,19 +92,28 @@ class ApiClient {
     });
   }
 
-  // Services
+  // Services (Direct Firestore + fallback)
   async getServices(): Promise<Service[]> {
-    const res = await this.request<{ success: boolean; services: Service[] }>('/api/services');
-    return res.services;
+    try {
+      return await getServicesFromFirestore();
+    } catch {
+      const res = await this.request<{ success: boolean; services: Service[] }>('/api/services');
+      return res.services;
+    }
   }
 
   async getService(id: string): Promise<Service> {
+    const services = await this.getServices();
+    const found = services.find(s => s.id === id || String(s.serviceId) === id);
+    if (found) return found;
     const res = await this.request<{ success: boolean; service: Service }>(`/api/services/${id}`);
     return res.service;
   }
 
   async getFavorites(): Promise<string[]> {
     try {
+      const stored = localStorage.getItem(`favs_${auth.currentUser?.uid || 'guest'}`);
+      if (stored) return JSON.parse(stored);
       const res = await this.request<{ success: boolean; favorites: string[] }>('/api/favorites');
       return res.favorites || [];
     } catch {
@@ -168,9 +122,24 @@ class ApiClient {
   }
 
   async toggleFavorite(serviceId: string): Promise<{ isFavorite: boolean; favorites: string[] }> {
-    return this.request<{ success: boolean; isFavorite: boolean; favorites: string[] }>(`/api/favorites/${serviceId}/toggle`, {
-      method: 'POST'
-    });
+    try {
+      const key = `favs_${auth.currentUser?.uid || 'guest'}`;
+      const current: string[] = JSON.parse(localStorage.getItem(key) || '[]');
+      let next: string[];
+      let isFav = false;
+      if (current.includes(serviceId)) {
+        next = current.filter(id => id !== serviceId);
+      } else {
+        next = [...current, serviceId];
+        isFav = true;
+      }
+      localStorage.setItem(key, JSON.stringify(next));
+      return { isFavorite: isFav, favorites: next };
+    } catch {
+      return this.request<{ success: boolean; isFavorite: boolean; favorites: string[] }>(`/api/favorites/${serviceId}/toggle`, {
+        method: 'POST'
+      });
+    }
   }
 
   async createService(data: Partial<Service>): Promise<Service> {
@@ -193,10 +162,24 @@ class ApiClient {
     await this.request(`/api/services/${id}`, { method: 'DELETE' });
   }
 
-  // Orders
+  // Orders (Direct Firestore + fallback)
   async getOrders(): Promise<Order[]> {
-    const res = await this.request<{ success: boolean; orders: Order[] }>('/api/orders');
-    return res.orders;
+    if (auth.currentUser) {
+      try {
+        const firestoreOrders = await getOrdersForUser(auth.currentUser.uid);
+        if (firestoreOrders && firestoreOrders.length > 0) {
+          return firestoreOrders;
+        }
+      } catch (e) {
+        console.warn('Firestore orders fetch fallback:', e);
+      }
+    }
+    try {
+      const res = await this.request<{ success: boolean; orders: Order[] }>('/api/orders');
+      return res.orders;
+    } catch {
+      return [];
+    }
   }
 
   async getAdminOrders(): Promise<Order[]> {
@@ -204,6 +187,9 @@ class ApiClient {
   }
 
   async getOrder(id: string): Promise<Order> {
+    const orders = await this.getOrders();
+    const match = orders.find(o => o.id === id);
+    if (match) return match;
     const res = await this.request<{ success: boolean; order: Order }>(`/api/orders/${id}`);
     return res.order;
   }
@@ -217,11 +203,40 @@ class ApiClient {
     requirements?: Record<string, string>;
     paymentMethod?: 'balance' | 'stripe' | 'card';
   }): Promise<Order> {
+    const services = await this.getServices();
+    const service = services.find(s => s.id === data.serviceId || String(s.serviceId) === data.serviceId) || INITIAL_SERVICES[0];
+    const qty = data.quantity || 1000;
+    const rate = service.ratePer1k || service.price || 0.45;
+    const calcPrice = Math.round(((rate * qty) / 1000) * 100) / 100;
+
+    if (auth.currentUser) {
+      try {
+        const newOrder = await createOrderInFirestore({
+          userId: auth.currentUser.uid,
+          customerName: auth.currentUser.displayName || 'Customer',
+          customerEmail: auth.currentUser.email || '',
+          serviceId: service.id,
+          serviceName: service.name,
+          serviceCategory: service.categoryName || service.category,
+          link: data.targetUrl || data.targetAccount || '@user',
+          targetUrl: data.targetUrl || data.targetAccount || '@user',
+          targetAccount: data.targetAccount || data.targetUrl || '@user',
+          quantity: qty,
+          price: calcPrice,
+          totalPrice: calcPrice,
+          customerNotes: data.customerNotes || '',
+        });
+        return newOrder;
+      } catch (err) {
+        console.warn('Firestore direct order creation fallback:', err);
+      }
+    }
+
     const payload = {
       serviceId: data.serviceId,
       targetAccount: data.targetAccount || data.targetUrl || '@user',
       targetUrl: data.targetUrl || data.targetAccount || '@user',
-      quantity: data.quantity || 1,
+      quantity: qty,
       customerNotes: data.customerNotes || '',
       requirements: data.requirements || (data.customerNotes ? { notes: data.customerNotes } : {}),
       paymentMethod: data.paymentMethod || 'balance'
@@ -269,8 +284,22 @@ class ApiClient {
   }
 
   async getTransactions(): Promise<Transaction[]> {
-    const res = await this.request<{ success: boolean; transactions: Transaction[] }>('/api/payments/transactions');
-    return res.transactions;
+    if (auth.currentUser) {
+      try {
+        const firestoreTxs = await getTransactionsForUser(auth.currentUser.uid);
+        if (firestoreTxs && firestoreTxs.length > 0) {
+          return firestoreTxs;
+        }
+      } catch (e) {
+        console.warn('Firestore tx fetch fallback:', e);
+      }
+    }
+    try {
+      const res = await this.request<{ success: boolean; transactions: Transaction[] }>('/api/payments/transactions');
+      return res.transactions;
+    } catch {
+      return [];
+    }
   }
 
   // Customers (Admin)

@@ -1,0 +1,90 @@
+{
+  "entities": {
+    "users": {
+      "title": "User Profile",
+      "description": "Customer and administrator user profiles keyed by Firebase Auth UID",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "email": { "type": "string", "description": "User email address" },
+        "username": { "type": "string", "description": "Unique username handle" },
+        "name": { "type": "string", "description": "Full display name" },
+        "mobile": { "type": "string", "description": "Mobile contact number" },
+        "role": { "type": "string", "enum": ["customer", "admin"], "description": "Security access role" },
+        "walletBalance": { "type": "number", "description": "Current wallet credit balance (starts at 0)" },
+        "spent": { "type": "number", "description": "Total amount spent" },
+        "status": { "type": "string", "enum": ["active", "disabled"], "description": "Account status" },
+        "createdAt": { "type": "string", "description": "ISO timestamp of account creation" },
+        "updatedAt": { "type": "string", "description": "ISO timestamp of last update" }
+      },
+      "required": ["uid", "email", "username", "name", "role", "walletBalance", "createdAt", "updatedAt"]
+    },
+    "services": {
+      "title": "Service",
+      "description": "SMM catalog services for order placement",
+      "type": "object",
+      "properties": {
+        "serviceId": { "type": "number", "description": "Numeric public service ID" },
+        "category": { "type": "string", "description": "Category ID" },
+        "categoryName": { "type": "string", "description": "Display name of category" },
+        "name": { "type": "string", "description": "Title of the service package" },
+        "description": { "type": "string", "description": "Detailed description" },
+        "price": { "type": "number", "description": "Rate per 1000 units" },
+        "pricePer1000": { "type": "number", "description": "Rate per 1000 units" },
+        "min": { "type": "number", "description": "Minimum order quantity" },
+        "max": { "type": "number", "description": "Maximum order quantity" },
+        "speed": { "type": "string", "description": "Delivery speed label" },
+        "speedTier": { "type": "string", "enum": ["Slow", "Medium", "Fast", "Very Fast"], "description": "Speed tier" },
+        "refill": { "type": "string", "description": "Refill policy" },
+        "location": { "type": "string", "description": "Audience location/quality" },
+        "startTime": { "type": "string", "description": "Average start time" },
+        "linkType": { "type": "string", "description": "Expected target link format" },
+        "videoFormat": { "type": "string", "description": "Supported media formats" },
+        "features": { "type": "array", "items": { "type": "string" }, "description": "Badge features" },
+        "active": { "type": "boolean", "description": "Whether service is available for orders" },
+        "status": { "type": "string", "description": "active or inactive" },
+        "createdAt": { "type": "string", "description": "Creation timestamp" },
+        "updatedAt": { "type": "string", "description": "Update timestamp" }
+      },
+      "required": ["serviceId", "category", "name", "price", "active"]
+    },
+    "categories": {
+      "title": "Platform Category",
+      "description": "Social media platform service categories",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Category identifier" },
+        "name": { "type": "string", "description": "Display name" },
+        "iconName": { "type": "string", "description": "Lucide icon name" },
+        "color": { "type": "string", "description": "Tailwind color class" },
+        "bgColor": { "type": "string", "description": "Tailwind bg color class" },
+        "order": { "type": "number", "description": "Sort order" },
+        "status": { "type": "string", "enum": ["active", "inactive"] }
+      },
+      "required": ["id", "name", "order", "status"]
+    },
+    "orders": {
+      "title": "Order",
+      "description": "Orders placed by customers",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique Order ID" },
+        "userId": { "type": "string", "description": "Customer Firebase Auth UID" },
+        "serviceId": { "type": "string", "description": "Service ID" },
+        "serviceName": { "type": "string", "description": "Service name" },
+        "serviceCategory": { "type": "string", "description": "Service category" },
+        "link": { "type": "string", "description": "Target social link or handle" },
+        "targetUrl": { "type": "string", "description": "Target URL" },
+        "quantity": { "type": "number", "description": "Ordered quantity" },
+        "price": { "type": "number", "description": "Total price paid" },
+        "totalPrice": { "type": "number", "description": "Total price" },
+        "status": { "type": "string", "enum": ["pending", "processing", "completed", "cancelled", "refunded"] },
+        "customerNotes": { "type": "string", "description": "Optional notes from customer" },
+        "createdAt": { "type": "string", "description": "Creation timestamp" },
+        "updatedAt": { "type": "string", "description": "Update timestamp" }
+      },
+      "required": ["id", "userId", "serviceId", "serviceName", "quantity", "price", "status", "createdAt"]
+    }
+  },
+  "firestoreRules": "rules_version = '2';\nservice cloud.firestore {\n  match /databases/{database}/documents {\n    function isAuthenticated() {\n      return request.auth != null;\n    }\n    function isOwner(userId) {\n      return isAuthenticated() && request.auth.uid == userId;\n    }\n    function isAdmin() {\n      return isAuthenticated() && \n        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&\n        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';\n    }\n    match /users/{userId} {\n      allow read: if isOwner(userId) || isAdmin();\n      allow create: if isOwner(userId) && request.resource.data.role == 'customer' && request.resource.data.walletBalance == 0;\n      allow update: if (isOwner(userId) && request.resource.data.role == resource.data.role && request.resource.data.walletBalance == resource.data.walletBalance) || isAdmin();\n      allow delete: if isAdmin();\n    }\n    match /services/{serviceId} {\n      allow read: if isAuthenticated();\n      allow write: if isAdmin();\n    }\n    match /categories/{categoryId} {\n      allow read: if isAuthenticated();\n      allow write: if isAdmin();\n    }\n    match /orders/{orderId} {\n      allow read: if (isAuthenticated() && resource.data.userId == request.auth.uid) || isAdmin();\n      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;\n      allow update, delete: if isAdmin();\n    }\n    match /transactions/{transactionId} {\n      allow read: if (isAuthenticated() && resource.data.userId == request.auth.uid) || isAdmin();\n      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;\n      allow update, delete: if isAdmin();\n    }\n    match /supportTickets/{ticketId} {\n      allow read: if (isAuthenticated() && resource.data.userId == request.auth.uid) || isAdmin();\n      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;\n      allow update: if (isAuthenticated() && resource.data.userId == request.auth.uid) || isAdmin();\n      allow delete: if isAdmin();\n    }\n  }\n}"
+}
