@@ -8,9 +8,10 @@ import {
   sendPasswordResetEmail,
 } from 'firebase/auth';
 import { auth } from '../config/firebase';
-import { getUserProfile, createUserProfile, updateUserProfile, UserProfile } from '../services/userService';
+import { getUserProfile, createUserProfile, UserProfile } from '../services/userService';
 import { User, Customer, Admin } from '../types/database';
 import { seedCatalogIfEmpty } from '../services/firestoreService';
+import { getReadableAuthErrorMessage } from './authErrors';
 
 export interface RegisterPayload {
   email: string;
@@ -48,7 +49,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // Helper to construct App User and CustomerProfile from Firestore doc & Firebase User
   const syncProfileState = (fbUser: FirebaseUser, profile: UserProfile | null) => {
     if (!profile) {
-      // Fallback user object if profile document is being created
       const fallbackUser: User = {
         id: fbUser.uid,
         email: fbUser.email || '',
@@ -127,7 +127,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  // Firebase Auth State Listener (persists session across reloads/restarts)
+  // Firebase Auth State Listener (persists session across reloads/restarts without depending on custom localStorage)
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
       setFirebaseUser(fbUser);
@@ -147,7 +147,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           syncProfileState(fbUser, profile);
           seedCatalogIfEmpty();
         } catch (e) {
-          console.error('Error fetching Firestore user profile:', e);
+          console.error('Error fetching Firestore user profile on auth state change:', e);
           syncProfileState(fbUser, null);
         }
       } else {
@@ -194,12 +194,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const trimmedName = (data.name || data.fullName || '').trim();
       const mobileNumber = (data.mobile || data.mobileNo || data.phone || '').trim();
 
-      // 1. Create Firebase Auth account (passwords handled securely by Firebase Auth)
+      // 1. Create Firebase Auth account
       const userCredential = await createUserWithEmailAndPassword(auth, trimmedEmail, data.password);
       const fbUser = userCredential.user;
       setFirebaseUser(fbUser);
 
-      // 2. Create Firestore users/{uid} document with walletBalance: 0 (NEVER store password in Firestore)
+      // 2. Create Firestore users/{uid} document with walletBalance: 0 (No passwords in Firestore)
       const profile = await createUserProfile(fbUser.uid, {
         email: trimmedEmail,
         username: trimmedUsername,

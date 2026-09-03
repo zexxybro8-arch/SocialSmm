@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { BRANDING } from '../config/branding';
 import { useAuth } from '../auth/AuthContext';
+import { getReadableAuthErrorMessage } from '../auth/authErrors';
 
 interface CreateAccountPageProps {
   onBackToLanding: () => void;
@@ -39,37 +40,20 @@ export const CreateAccountPage: React.FC<CreateAccountPageProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  const getFriendlyErrorMessage = (error: any): string => {
-    const code = error?.code || '';
-    if (code === 'auth/email-already-in-use') {
-      return 'An account with this email address already exists. Please sign in instead.';
-    }
-    if (code === 'auth/weak-password') {
-      return 'Password should be at least 6 characters long.';
-    }
-    if (code === 'auth/invalid-email') {
-      return 'Please provide a valid email format (e.g. name@example.com).';
-    }
-    if (code === 'auth/network-request-failed') {
-      return 'Network connection error. Please check your internet connection.';
-    }
-    return error.message || 'Registration failed. Please verify your details.';
-  };
-
   const validateForm = (): string | null => {
     const trimmedEmail = email.trim();
     const trimmedUsername = username.trim();
     const trimmedName = name.trim();
 
-    if (!trimmedEmail) return 'Please enter your email address.';
+    if (!trimmedEmail) return 'Please enter a valid email.';
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(trimmedEmail)) return 'Please provide a valid email format (e.g. name@example.com).';
+    if (!emailRegex.test(trimmedEmail)) return 'Please enter a valid email.';
 
     if (!trimmedUsername) return 'Please enter a desired username.';
     if (trimmedUsername.length < 3) return 'Username must contain at least 3 characters.';
 
-    if (!password) return 'Please enter a secure password.';
-    if (password.length < 6) return 'Password must be at least 6 characters long.';
+    if (!password) return 'Please enter a password.';
+    if (password.length < 6) return 'Password is too weak.';
 
     if (!trimmedName) return 'Please enter your full name.';
 
@@ -100,12 +84,13 @@ export const CreateAccountPage: React.FC<CreateAccountPageProps> = ({
         mobileNo: mobileNo.trim() || undefined,
       });
 
-      setSuccessMessage('Account created successfully! Preparing your dashboard...');
+      setSuccessMessage('Account created successfully! Redirecting...');
+      // Allow auth state to propagate and then transition
       setTimeout(() => {
         onRegisterSuccess('customer');
-      }, 500);
+      }, 300);
     } catch (err: any) {
-      setErrorMessage(getFriendlyErrorMessage(err));
+      setErrorMessage(getReadableAuthErrorMessage(err));
     } finally {
       setIsLoading(false);
     }

@@ -7,10 +7,10 @@ import {
   Eye, 
   EyeOff, 
   ShieldCheck, 
-  Sparkles
 } from 'lucide-react';
 import { BRANDING } from '../config/branding';
 import { useAuth } from '../auth/AuthContext';
+import { getReadableAuthErrorMessage } from '../auth/authErrors';
 
 interface LoginPageProps {
   onBackToLanding: () => void;
@@ -39,37 +39,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   const [forgotLoading, setForgotLoading] = useState(false);
   const [forgotStatus, setForgotStatus] = useState<string | null>(null);
 
-  const getFriendlyErrorMessage = (error: any): string => {
-    const code = error?.code || '';
-    if (
-      code === 'auth/invalid-credential' || 
-      code === 'auth/wrong-password' || 
-      code === 'auth/user-not-found'
-    ) {
-      return 'Invalid email or password.';
-    }
-    if (code === 'auth/invalid-email') {
-      return 'Please enter a valid email address.';
-    }
-    if (code === 'auth/too-many-requests') {
-      return 'Too many failed attempts. Please wait a moment and try again.';
-    }
-    if (code === 'auth/user-disabled') {
-      return 'This account has been disabled. Please contact support.';
-    }
-    if (code === 'auth/network-request-failed') {
-      return 'Network connection error. Please check your internet connection.';
-    }
-    return error.message || 'Invalid email or password.';
-  };
-
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
     const trimmedEmail = email.trim();
     if (!trimmedEmail) {
-      setErrorMessage('Please enter your email address.');
+      setErrorMessage('Please enter a valid email.');
       return;
     }
 
@@ -82,9 +58,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
     try {
       await login(trimmedEmail, password);
+      // Auth succeeded and state is populated
       onLoginSuccess('customer');
     } catch (err: any) {
-      setErrorMessage(getFriendlyErrorMessage(err));
+      setErrorMessage(getReadableAuthErrorMessage(err));
     } finally {
       setIsLoading(false);
     }
@@ -99,7 +76,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
       await resetPassword(forgotEmail.trim());
       setForgotStatus('Password recovery instructions have been sent to your email.');
     } catch (err: any) {
-      setForgotStatus(getFriendlyErrorMessage(err));
+      setForgotStatus(getReadableAuthErrorMessage(err));
     } finally {
       setForgotLoading(false);
     }
