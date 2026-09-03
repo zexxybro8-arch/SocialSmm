@@ -6,6 +6,8 @@ import {
   signOut,
   onAuthStateChanged,
   sendPasswordResetEmail,
+  GoogleAuthProvider,
+  signInWithPopup,
 } from 'firebase/auth';
 import { auth } from '../config/firebase';
 import { getUserProfile, createUserProfile, UserProfile } from '../services/userService';
@@ -31,6 +33,7 @@ interface AuthContextType {
   adminProfile: Admin | null;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  loginWithGoogle: () => Promise<void>;
   register: (data: RegisterPayload) => Promise<void>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -186,6 +189,33 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+  const loginWithGoogle = async () => {
+    setIsLoading(true);
+    try {
+      const provider = new GoogleAuthProvider();
+      const userCredential = await signInWithPopup(auth, provider);
+      const fbUser = userCredential.user;
+      setFirebaseUser(fbUser);
+
+      let profile = await getUserProfile(fbUser.uid);
+      if (!profile) {
+        profile = await createUserProfile(fbUser.uid, {
+          email: fbUser.email || '',
+          username: fbUser.displayName || fbUser.email?.split('@')[0] || 'user',
+          name: fbUser.displayName || 'Customer',
+          walletBalance: 0,
+          role: 'customer',
+        });
+      }
+      syncProfileState(fbUser, profile);
+      seedCatalogIfEmpty();
+    } catch (err: any) {
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const register = async (data: RegisterPayload) => {
     setIsLoading(true);
     try {
@@ -256,6 +286,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         adminProfile,
         isLoading,
         login,
+        loginWithGoogle,
         register,
         logout,
         refreshProfile,
