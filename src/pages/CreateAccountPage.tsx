@@ -27,7 +27,7 @@ export const CreateAccountPage: React.FC<CreateAccountPageProps> = ({
   onGoToLogin,
   onRegisterSuccess,
 }) => {
-  const { register, loginWithGoogle } = useAuth();
+  const { register, loginWithGoogle, loginAsDemo } = useAuth();
 
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
@@ -68,9 +68,26 @@ export const CreateAccountPage: React.FC<CreateAccountPageProps> = ({
       await loginWithGoogle();
       onRegisterSuccess('customer');
     } catch (err: any) {
-      setErrorMessage(getReadableAuthErrorMessage(err));
+      if (err?.code === 'auth/popup-closed-by-user') {
+        setErrorMessage('Google sign-in was cancelled (popup was closed). You can try again or use Quick Demo Mode below.');
+      } else {
+        setErrorMessage(getReadableAuthErrorMessage(err));
+      }
     } finally {
       setIsGoogleLoading(false);
+    }
+  };
+
+  const handleDemoAccess = async () => {
+    setErrorMessage(null);
+    setIsLoading(true);
+    try {
+      await loginAsDemo('customer');
+      onRegisterSuccess('customer');
+    } catch (err: any) {
+      setErrorMessage('Failed to launch demo session. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -151,9 +168,27 @@ export const CreateAccountPage: React.FC<CreateAccountPageProps> = ({
 
           {/* Error Message */}
           {errorMessage && (
-            <div className="mb-4 p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center space-x-2 animate-in fade-in duration-150">
-              <AlertCircle className="w-4 h-4 flex-shrink-0" />
-              <span>{errorMessage}</span>
+            <div className="mb-4 p-3.5 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-200 text-xs flex flex-col space-y-2 animate-in fade-in duration-150">
+              <div className="flex items-start space-x-2">
+                <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
+                <span className="leading-relaxed">{errorMessage}</span>
+              </div>
+              <div className="pt-1 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onGoToLogin}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold text-[11px] transition cursor-pointer"
+                >
+                  👉 Go to Sign In
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDemoAccess}
+                  className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold text-[11px] transition cursor-pointer"
+                >
+                  ⚡ Launch Quick Demo Mode
+                </button>
+              </div>
             </div>
           )}
 
@@ -348,6 +383,24 @@ export const CreateAccountPage: React.FC<CreateAccountPageProps> = ({
               >
                 Already have an account? <span className="text-emerald-400 font-bold">Sign in</span>
               </button>
+            </div>
+
+            {/* Quick Demo Access Options */}
+            <div className="pt-3 border-t border-zinc-800/80 mt-2">
+              <div className="text-[11px] font-medium text-zinc-500 text-center mb-2">
+                Instant Preview Access (No Firebase Sign-in Required):
+              </div>
+              <div>
+                <button
+                  type="button"
+                  id="demo-account-btn"
+                  onClick={handleDemoAccess}
+                  disabled={isLoading || isGoogleLoading}
+                  className="w-full py-2 px-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 font-semibold text-xs transition text-center cursor-pointer disabled:opacity-50"
+                >
+                  ⚡ Launch Quick Demo Account
+                </button>
+              </div>
             </div>
           </form>
 

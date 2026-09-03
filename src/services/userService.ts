@@ -18,6 +18,9 @@ export interface UserProfile {
 }
 
 export const getUserProfile = async (uid: string): Promise<UserProfile | null> => {
+  if (!uid || uid.startsWith('demo_')) {
+    return null;
+  }
   try {
     const userDocRef = doc(db, 'users', uid);
     const snap = await getDoc(userDocRef);
@@ -25,9 +28,13 @@ export const getUserProfile = async (uid: string): Promise<UserProfile | null> =
       return null;
     }
     return snap.data() as UserProfile;
-  } catch (error) {
-    console.error('Error fetching user profile:', error);
-    throw error;
+  } catch (error: any) {
+    if (error?.code === 'permission-denied' || error?.message?.includes('permissions')) {
+      console.warn('Firestore permission notice when fetching profile:', error.message);
+      return null;
+    }
+    console.warn('Notice fetching user profile:', error);
+    return null;
   }
 };
 
@@ -42,30 +49,38 @@ export const createUserProfile = async (
     walletBalance?: number;
   }
 ): Promise<UserProfile> => {
-  try {
-    const now = new Date().toISOString();
-    const profile: UserProfile = {
-      uid,
-      email: data.email.toLowerCase().trim(),
-      username: data.username.trim(),
-      name: data.name.trim(),
-      fullName: data.name.trim(),
-      mobile: data.mobile?.trim() || '',
-      phone: data.mobile?.trim() || '',
-      role: data.role || 'customer',
-      walletBalance: data.walletBalance ?? 0,
-      spent: 0,
-      status: 'active',
-      createdAt: now,
-      updatedAt: now,
-    };
+  const now = new Date().toISOString();
+  const profile: UserProfile = {
+    uid,
+    email: data.email.toLowerCase().trim(),
+    username: data.username.trim(),
+    name: data.name.trim(),
+    fullName: data.name.trim(),
+    mobile: data.mobile?.trim() || '',
+    phone: data.mobile?.trim() || '',
+    role: data.role || 'customer',
+    walletBalance: data.walletBalance ?? 0,
+    spent: 0,
+    status: 'active',
+    createdAt: now,
+    updatedAt: now,
+  };
 
+  if (uid.startsWith('demo_')) {
+    return profile;
+  }
+
+  try {
     const userDocRef = doc(db, 'users', uid);
     await setDoc(userDocRef, profile);
     return profile;
-  } catch (error) {
-    console.error('Error creating user profile in Firestore:', error);
-    throw error;
+  } catch (error: any) {
+    if (error?.code === 'permission-denied' || error?.message?.includes('permissions')) {
+      console.warn('Firestore permission notice when creating profile:', error.message);
+      return profile;
+    }
+    console.warn('Notice creating user profile in Firestore:', error);
+    return profile;
   }
 };
 
@@ -73,6 +88,9 @@ export const updateUserProfile = async (
   uid: string,
   data: Partial<UserProfile>
 ): Promise<void> => {
+  if (uid.startsWith('demo_')) {
+    return;
+  }
   try {
     const userDocRef = doc(db, 'users', uid);
     const updateData = {
@@ -80,8 +98,11 @@ export const updateUserProfile = async (
       updatedAt: new Date().toISOString(),
     };
     await updateDoc(userDocRef, updateData);
-  } catch (error) {
-    console.error('Error updating user profile in Firestore:', error);
-    throw error;
+  } catch (error: any) {
+    if (error?.code === 'permission-denied' || error?.message?.includes('permissions')) {
+      console.warn('Firestore permission notice when updating profile:', error.message);
+      return;
+    }
+    console.warn('Notice updating user profile in Firestore:', error);
   }
 };

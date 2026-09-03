@@ -14,7 +14,7 @@ export const getReadableAuthErrorMessage = (error: any): string => {
 
   switch (code) {
     case 'auth/email-already-in-use':
-      return 'This email is already registered.';
+      return 'This email is already registered. Please sign in instead or use a different email.';
     case 'auth/invalid-credential':
     case 'auth/wrong-password':
     case 'auth/user-not-found':

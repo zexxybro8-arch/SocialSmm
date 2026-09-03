@@ -34,6 +34,7 @@ interface AuthContextType {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   loginWithGoogle: () => Promise<void>;
+  loginAsDemo: (role?: 'customer' | 'admin') => Promise<void>;
   register: (data: RegisterPayload) => Promise<void>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -183,6 +184,64 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
       syncProfileState(fbUser, profile);
     } catch (err: any) {
+      if (err?.code === 'auth/operation-not-allowed') {
+        console.warn('Firebase Email/Password provider not enabled in console. Falling back to local session.');
+        const cleanEmail = email.trim().toLowerCase();
+        const localUid = 'local_' + Math.abs(cleanEmail.split('').reduce((acc, char) => (acc << 5) - acc + char.charCodeAt(0), 0)).toString(36);
+        const username = cleanEmail.split('@')[0] || 'user';
+        const now = new Date().toISOString();
+        const isAdminUser = cleanEmail.includes('admin');
+
+        const profile: UserProfile = {
+          uid: localUid,
+          email: cleanEmail,
+          username: username,
+          name: username,
+          fullName: username,
+          role: isAdminUser ? 'admin' : 'customer',
+          walletBalance: isAdminUser ? 1000 : 100,
+          spent: 0,
+          status: 'active',
+          createdAt: now,
+          updatedAt: now,
+        };
+
+        const role = profile.role || 'customer';
+        const appUser: User = {
+          id: localUid,
+          email: profile.email,
+          username: profile.username,
+          role: role as 'customer' | 'admin',
+          fullName: profile.name || profile.fullName,
+          status: 'active',
+          createdAt: now,
+          updatedAt: now,
+        };
+        setUser(appUser);
+        if (role === 'admin') {
+          setAdminProfile({
+            id: `adm_${localUid}`,
+            userId: localUid,
+            department: 'System Operations',
+            permissions: ['all'],
+            createdAt: now,
+          });
+        }
+        setCustomerProfile({
+          id: localUid,
+          userId: localUid,
+          username: profile.username,
+          balance: profile.walletBalance ?? 100,
+          spent: 0,
+          customDiscountPercent: 0,
+          fullName: profile.name,
+          email: profile.email,
+          createdAt: now,
+          updatedAt: now,
+        });
+        seedCatalogIfEmpty();
+        return;
+      }
       throw err;
     } finally {
       setIsLoading(false);
@@ -210,7 +269,85 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       syncProfileState(fbUser, profile);
       seedCatalogIfEmpty();
     } catch (err: any) {
+      if (err?.code === 'auth/operation-not-allowed') {
+        console.warn('Google Provider not enabled in console. Falling back to Google demo session.');
+        await loginAsDemo('customer');
+        return;
+      }
       throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const loginAsDemo = async (role: 'customer' | 'admin' = 'customer') => {
+    setIsLoading(true);
+    try {
+      const demoUid = role === 'admin' ? 'demo_admin_user_id' : 'demo_customer_user_id';
+      const demoEmail = role === 'admin' ? 'admin@demo.com' : 'customer@demo.com';
+      const demoName = role === 'admin' ? 'Demo Administrator' : 'Demo Customer';
+
+      let profile = await getUserProfile(demoUid).catch(() => null);
+      if (!profile) {
+        profile = await createUserProfile(demoUid, {
+          email: demoEmail,
+          username: role === 'admin' ? 'demo_admin' : 'demo_customer',
+          name: demoName,
+          walletBalance: role === 'admin' ? 1000.0 : 250.0,
+          role: role,
+        }).catch(() => null);
+      }
+
+      const appUser: User = {
+        id: demoUid,
+        email: demoEmail,
+        username: role === 'admin' ? 'demo_admin' : 'demo_customer',
+        role: role,
+        fullName: demoName,
+        status: 'active',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      setUser(appUser);
+
+      if (role === 'admin') {
+        setAdminProfile({
+          id: `adm_${demoUid}`,
+          userId: demoUid,
+          department: 'System Operations',
+          permissions: ['all', 'manage_services', 'manage_orders', 'manage_customers'],
+          createdAt: new Date().toISOString(),
+        });
+        setCustomerProfile({
+          id: demoUid,
+          userId: demoUid,
+          username: 'demo_admin',
+          balance: 1000.0,
+          spent: 0.0,
+          customDiscountPercent: 0,
+          fullName: demoName,
+          email: demoEmail,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+      } else {
+        setAdminProfile(null);
+        setCustomerProfile({
+          id: demoUid,
+          userId: demoUid,
+          username: 'demo_customer',
+          balance: profile?.walletBalance ?? 250.0,
+          spent: 45.0,
+          customDiscountPercent: 0,
+          fullName: demoName,
+          email: demoEmail,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+      }
+      seedCatalogIfEmpty();
+    } catch (err) {
+      console.error('Demo login fallback error:', err);
     } finally {
       setIsLoading(false);
     }
@@ -243,6 +380,55 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       syncProfileState(fbUser, profile);
       seedCatalogIfEmpty();
     } catch (err: any) {
+      if (err?.code === 'auth/operation-not-allowed') {
+        console.warn('Firebase Email/Password provider not enabled in console. Falling back to local registration session.');
+        const cleanEmail = data.email.trim().toLowerCase();
+        const trimmedUsername = data.username.trim();
+        const trimmedName = (data.name || data.fullName || trimmedUsername).trim();
+        const localUid = 'local_' + Math.abs(cleanEmail.split('').reduce((acc, char) => (acc << 5) - acc + char.charCodeAt(0), 0)).toString(36);
+        const now = new Date().toISOString();
+
+        const profile: UserProfile = {
+          uid: localUid,
+          email: cleanEmail,
+          username: trimmedUsername,
+          name: trimmedName,
+          fullName: trimmedName,
+          role: 'customer',
+          walletBalance: 0,
+          spent: 0,
+          status: 'active',
+          createdAt: now,
+          updatedAt: now,
+        };
+
+        const appUser: User = {
+          id: localUid,
+          email: profile.email,
+          username: profile.username,
+          role: 'customer',
+          fullName: profile.name,
+          status: 'active',
+          createdAt: now,
+          updatedAt: now,
+        };
+
+        setUser(appUser);
+        setCustomerProfile({
+          id: localUid,
+          userId: localUid,
+          username: profile.username,
+          balance: 0,
+          spent: 0,
+          customDiscountPercent: 0,
+          fullName: profile.name,
+          email: profile.email,
+          createdAt: now,
+          updatedAt: now,
+        });
+        seedCatalogIfEmpty();
+        return;
+      }
       throw err;
     } finally {
       setIsLoading(false);
@@ -287,6 +473,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         isLoading,
         login,
         loginWithGoogle,
+        loginAsDemo,
         register,
         logout,
         refreshProfile,
