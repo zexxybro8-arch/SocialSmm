@@ -1082,10 +1082,10 @@ export const DEFAULT_SETTINGS: SystemSettings = {
   id: 'system',
   siteName: 'Instagram SMM Panel',
   supportEmail: 'support@smmportal.com',
-  currency: 'USD',
-  currencySymbol: '$',
-  minDepositAmount: 5,
-  maxDepositAmount: 10000,
+  currency: 'INR',
+  currencySymbol: '₹',
+  minDepositAmount: 1,
+  maxDepositAmount: 1000000,
   allowSelfRegistration: true,
   maintenanceMode: false,
   metaGraphApiVersion: 'v18.0',
@@ -1098,7 +1098,7 @@ export const getSettingsFromFirestore = async (): Promise<SystemSettings> => {
   try {
     const snap = await getDoc(doc(db, 'settings', 'system'));
     if (snap.exists()) {
-      return snap.data() as SystemSettings;
+      return { ...DEFAULT_SETTINGS, ...snap.data() } as SystemSettings;
     }
   } catch (e) {
     console.warn('Settings fetch notice:', e);
@@ -1113,4 +1113,49 @@ export const updateSettingsInFirestore = async (data: Partial<SystemSettings>): 
   const updated = { ...current, ...data, updatedAt: now };
   await setDoc(ref, updated, { merge: true });
   return updated;
+};
+
+// FIXED DEPOSIT OPTIONS
+const DEFAULT_FIXED_DEPOSITS: Array<{ id: string; amount: number; active: boolean; qrImageUrl?: string; createdAt: string }> = [
+  { id: 'fd_500', amount: 500, active: true, createdAt: new Date().toISOString() },
+  { id: 'fd_1000', amount: 1000, active: true, createdAt: new Date().toISOString() },
+  { id: 'fd_5200', amount: 5200, active: true, createdAt: new Date().toISOString() },
+  { id: 'fd_10000', amount: 10000, active: true, createdAt: new Date().toISOString() },
+  { id: 'fd_50000', amount: 50000, active: true, createdAt: new Date().toISOString() },
+  { id: 'fd_100000', amount: 100000, active: true, createdAt: new Date().toISOString() },
+  { id: 'fd_1000000', amount: 1000000, active: true, createdAt: new Date().toISOString() },
+];
+
+export const getFixedDepositOptionsFromFirestore = async () => {
+  try {
+    const snap = await getDocs(collection(db, 'fixed_deposits'));
+    if (!snap.empty) {
+      const list = snap.docs.map((d) => d.data() as any);
+      list.sort((a, b) => a.amount - b.amount);
+      return list;
+    }
+  } catch (e) {
+    console.warn('Fixed deposits fetch notice:', e);
+  }
+  return DEFAULT_FIXED_DEPOSITS;
+};
+
+export const saveFixedDepositOptionToFirestore = async (option: { amount: number; active: boolean; qrImageUrl?: string }) => {
+  const id = `fd_${option.amount}`;
+  const now = new Date().toISOString();
+  const ref = doc(db, 'fixed_deposits', id);
+  const data = {
+    id,
+    amount: Math.floor(option.amount),
+    active: Boolean(option.active),
+    qrImageUrl: option.qrImageUrl || '',
+    createdAt: now,
+    updatedAt: now,
+  };
+  await setDoc(ref, data, { merge: true });
+  return data;
+};
+
+export const deleteFixedDepositOptionFromFirestore = async (id: string) => {
+  await deleteDoc(doc(db, 'fixed_deposits', id));
 };

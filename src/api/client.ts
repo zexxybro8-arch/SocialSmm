@@ -41,6 +41,9 @@ import {
   getNotificationsFromFirestore,
   getSettingsFromFirestore,
   updateSettingsInFirestore,
+  getFixedDepositOptionsFromFirestore,
+  saveFixedDepositOptionToFirestore,
+  deleteFixedDepositOptionFromFirestore,
   INITIAL_SERVICES 
 } from '../services/firestoreService';
 
@@ -119,20 +122,47 @@ class ApiClient {
     await deleteServiceInFirestore(id);
   }
 
-  // Orders (Pure Client-side Firestore)
+  // Orders (Secure Backend API & Firestore Fallback)
   async getOrders(): Promise<Order[]> {
-    if (auth.currentUser) {
-      return getOrdersForUser(auth.currentUser.uid);
+    const currentUser = auth.currentUser;
+    if (!currentUser) return [];
+
+    try {
+      const idToken = await currentUser.getIdToken();
+      const res = await fetch('/api/orders', {
+        headers: { 'Authorization': `Bearer ${idToken}` }
+      });
+      const data = await res.json();
+      if (data.success && Array.isArray(data.orders)) {
+        return data.orders;
+      }
+    } catch {
+      // Fallback
     }
-    return [];
+    return getOrdersForUser(currentUser.uid);
   }
 
   async getAdminOrders(): Promise<Order[]> {
+    const currentUser = auth.currentUser;
+    if (currentUser) {
+      try {
+        const idToken = await currentUser.getIdToken();
+        const res = await fetch('/api/admin/orders', {
+          headers: { 'Authorization': `Bearer ${idToken}` }
+        });
+        const data = await res.json();
+        if (data.success && Array.isArray(data.orders)) {
+          return data.orders;
+        }
+      } catch {
+        // Fallback
+      }
+    }
     return getAllOrdersFromFirestore();
   }
 
   async getOrder(id: string): Promise<Order> {
-    const orders = await getAllOrdersFromFirestore();
+    const orders = await this.getAdminOrders();
     const match = orders.find(o => o.id === id);
     if (match) return match;
     throw new Error('Order not found');
@@ -146,40 +176,137 @@ class ApiClient {
     customerNotes?: string;
     requirements?: Record<string, string>;
     paymentMethod?: 'balance' | 'stripe' | 'card';
+    idempotencyKey?: string;
   }): Promise<Order> {
-    const services = await this.getServices();
-    const service = services.find(s => s.id === data.serviceId || String(s.serviceId) === data.serviceId) || INITIAL_SERVICES[0];
-    const qty = data.quantity || 1000;
-    const rate = service.ratePer1k || service.price || 0.45;
-    const calcPrice = Math.round(((rate * qty) / 1000) * 100) / 100;
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      throw new Error('Please log in to place an order.');
+    }
 
-    const uid = auth.currentUser?.uid || 'demo_user';
-    const name = auth.currentUser?.displayName || auth.currentUser?.email?.split('@')[0] || 'Customer';
-    const email = auth.currentUser?.email || 'customer@example.com';
+    const idToken = await currentUser.getIdToken();
+    const link = (data.targetUrl || data.targetAccount || '').trim();
 
-    return createOrderInFirestore({
-      userId: uid,
-      customerName: name,
-      customerEmail: email,
-      serviceId: service.id,
-      serviceName: service.name,
-      serviceCategory: service.categoryName || service.category,
-      link: data.targetUrl || data.targetAccount || '@user',
-      targetUrl: data.targetUrl || data.targetAccount || '@user',
-      targetAccount: data.targetAccount || data.targetUrl || '@user',
-      quantity: qty,
-      price: calcPrice,
-      totalPrice: calcPrice,
-      customerNotes: data.customerNotes || '',
+    const response = await fetch('/api/orders/create', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({
+        serviceId: data.serviceId,
+        quantity: data.quantity,
+        link: link,
+        targetUrl: data.targetUrl || link,
+        targetAccount: data.targetAccount || link,
+        customerNotes: data.customerNotes,
+        requirements: data.requirements,
+        idempotencyKey: data.idempotencyKey || `idemp_${currentUser.uid}_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      }),
     });
+
+    const resData = await response.json().catch(() => ({}));
+
+    if (!response.ok || !resData.success) {
+      throw new Error(resData.error || 'Unable to place order. Please try again.');
+    }
+
+    return resData.order as Order;
   }
 
-  async updateOrderStatus(id: string, status: string, note?: string): Promise<Order> {
+  async updateOrderStatus(
+    id: string, 
+    status: string, 
+    note?: string, 
+    providerOrderId?: string, 
+    refundCustomer?: boolean
+  ): Promise<Order> {
+    const currentUser = auth.currentUser;
+    if (currentUser) {
+      try {
+        const idToken = await currentUser.getIdToken();
+        const res = await fetch('/api/admin/orders/update-status', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${idToken}`,
+          },
+          body: JSON.stringify({
+            orderId: id,
+            status,
+            notes: note,
+            providerOrderId,
+            refundCustomer,
+          }),
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+          return data.order;
+        } else if (data.error) {
+          throw new Error(data.error);
+        }
+      } catch (e: any) {
+        if (e.message) throw e;
+      }
+    }
+
     return updateOrderStatusInFirestore(id, status, note);
   }
 
+  async createManualOrder(data: {
+    targetUserId: string;
+    serviceId: string;
+    quantity: number;
+    link: string;
+    chargeCustomer: boolean;
+    providerMode: 'automatic' | 'manual';
+    providerOrderId?: string;
+    status: string;
+    notes?: string;
+  }): Promise<Order> {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('Admin authentication required');
+
+    const idToken = await currentUser.getIdToken();
+    const res = await fetch('/api/admin/orders/create-manual', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${idToken}`,
+      },
+      body: JSON.stringify(data),
+    });
+
+    const resData = await res.json();
+    if (!res.ok || !resData.success) {
+      throw new Error(resData.error || 'Failed to create manual order');
+    }
+
+    return resData.order as Order;
+  }
+
+  async searchAdminCustomers(): Promise<Array<{ id: string; userId: string; username: string; fullName: string; email: string; walletBalance: number }>> {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return [];
+
+    try {
+      const idToken = await currentUser.getIdToken();
+      const res = await fetch('/api/admin/customers/search', {
+        headers: { 'Authorization': `Bearer ${idToken}` }
+      });
+      const data = await res.json();
+      if (data.success && Array.isArray(data.customers)) {
+        return data.customers;
+      }
+    } catch {
+      // Fallback
+    }
+    return [];
+  }
+
   async refundOrder(id: string, reason?: string): Promise<{ order: Order; refundedAmount: number }> {
-    return refundOrderInFirestore(id, reason);
+    const updated = await this.updateOrderStatus(id, 'refunded', reason, undefined, true);
+    return { order: updated, refundedAmount: updated.finalAmount || updated.price || 0 };
   }
 
   // Payments / Wallet Top-Up
@@ -454,6 +581,19 @@ class ApiClient {
 
   async updateSettings(data: Partial<SystemSettings>): Promise<SystemSettings> {
     return updateSettingsInFirestore(data);
+  }
+
+  // Fixed Deposit Options
+  async getFixedDepositOptions() {
+    return getFixedDepositOptionsFromFirestore();
+  }
+
+  async saveFixedDepositOption(data: { amount: number; active: boolean; qrImageUrl?: string }) {
+    return saveFixedDepositOptionToFirestore(data);
+  }
+
+  async deleteFixedDepositOption(id: string) {
+    return deleteFixedDepositOptionFromFirestore(id);
   }
 }
 

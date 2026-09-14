@@ -23,7 +23,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   onGoToRegister,
   onLoginSuccess,
 }) => {
-  const { login, loginWithGoogle, loginAsDemo, resetPassword } = useAuth();
+  const { login, loginWithGoogle, resetPassword } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -76,25 +76,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({
       onLoginSuccess('customer');
     } catch (err: any) {
       if (err?.code === 'auth/popup-closed-by-user') {
-        setErrorMessage('Google sign-in was cancelled (popup was closed). You can try again or use Quick Demo Mode below.');
+        setErrorMessage('Google sign-in was cancelled (popup was closed). Please try again.');
       } else {
         setErrorMessage(getReadableAuthErrorMessage(err));
       }
     } finally {
       setIsGoogleLoading(false);
-    }
-  };
-
-  const handleDemoAccess = async (role: 'customer' | 'admin' = 'customer') => {
-    setErrorMessage(null);
-    setIsLoading(true);
-    try {
-      await loginAsDemo(role);
-      onLoginSuccess(role);
-    } catch (err: any) {
-      setErrorMessage('Failed to launch demo session. Please try again.');
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -154,20 +141,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
           {/* Error Message */}
           {errorMessage && (
-            <div className="mb-4 p-3.5 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-200 text-xs flex flex-col space-y-2 animate-in fade-in duration-150">
-              <div className="flex items-start space-x-2">
-                <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
-                <span className="leading-relaxed">{errorMessage}</span>
-              </div>
-              <div className="pt-1 flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleDemoAccess('customer')}
-                  className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold text-[11px] transition cursor-pointer"
-                >
-                  ⚡ Launch Quick Demo Mode
-                </button>
-              </div>
+            <div className="mb-4 p-3.5 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-200 text-xs flex items-start space-x-2 animate-in fade-in duration-150">
+              <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
+              <span className="leading-relaxed">{errorMessage}</span>
             </div>
           )}
 
@@ -321,33 +297,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({
               >
                 Don't have an account? <span className="text-emerald-400 font-bold">Create account</span>
               </button>
-            </div>
-
-            {/* Quick Demo Access Options */}
-            <div className="pt-3 border-t border-zinc-800/80 mt-2">
-              <div className="text-[11px] font-medium text-zinc-500 text-center mb-2">
-                Instant Preview Access (No Firebase Sign-in Required):
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  id="demo-customer-btn"
-                  onClick={() => handleDemoAccess('customer')}
-                  disabled={isLoading || isGoogleLoading}
-                  className="py-2 px-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 font-semibold text-xs transition text-center cursor-pointer disabled:opacity-50"
-                >
-                  ⚡ Demo Customer
-                </button>
-                <button
-                  type="button"
-                  id="demo-admin-btn"
-                  onClick={() => handleDemoAccess('admin')}
-                  disabled={isLoading || isGoogleLoading}
-                  className="py-2 px-3 rounded-xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 font-semibold text-xs transition text-center cursor-pointer disabled:opacity-50"
-                >
-                  👑 Demo Admin
-                </button>
-              </div>
             </div>
           </form>
 

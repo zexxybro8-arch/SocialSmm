@@ -37,9 +37,12 @@ export const OrdersPage: React.FC<OrdersPageProps> = ({
   const statusFilters: { id: string; label: string }[] = [
     { id: 'all', label: 'All' },
     { id: 'pending', label: 'Pending' },
-    { id: 'in_progress', label: 'In Progress' },
+    { id: 'processing', label: 'Processing' },
     { id: 'completed', label: 'Completed' },
+    { id: 'partial', label: 'Partial' },
     { id: 'cancelled', label: 'Cancelled' },
+    { id: 'refunded', label: 'Refunded' },
+    { id: 'failed', label: 'Failed' },
   ];
 
   const filteredOrders = orders.filter((o) => {

@@ -6,46 +6,103 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
     // Users Collection
     match /users/{userId} {
-      allow read, create, update, delete: if isAuthenticated();
+      allow read: if isOwner(userId) || isAdmin();
+      
+      allow create: if isOwner(userId) && 
+        (!('role' in request.resource.data) || request.resource.data.role == 'customer') && 
+        (!('walletBalance' in request.resource.data) || request.resource.data.walletBalance == 0);
+      
+      allow update: if isOwner(userId) && 
+        (!('role' in request.resource.data) || request.resource.data.role == resource.data.role) && 
+        (!('walletBalance' in request.resource.data) || request.resource.data.walletBalance == resource.data.walletBalance) && 
+        (!('spent' in request.resource.data) || request.resource.data.spent == resource.data.spent);
+
+      allow delete: if isAdmin();
+    }
+
+    // Customers Collection
+    match /customers/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && (!('balance' in request.resource.data) || request.resource.data.balance == 0);
+      allow update: if isOwner(userId) && (!('balance' in request.resource.data) || request.resource.data.balance == resource.data.balance);
+      allow delete: if isAdmin();
     }
 
     // Services Catalog
     match /services/{serviceId} {
       allow read: if true;
-      allow write: if isAuthenticated();
+      allow write: if isAdmin();
     }
 
     // Categories Catalog
     match /categories/{categoryId} {
       allow read: if true;
-      allow write: if isAuthenticated();
+      allow write: if isAdmin();
     }
 
     // Orders Collection
     match /orders/{orderId} {
-      allow read, create, update, delete: if isAuthenticated();
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid || 
+        resource.data.customerId == request.auth.uid || 
+        isAdmin()
+      );
+      allow write: if isAdmin();
     }
 
     // Transactions / Ledger
     match /transactions/{transactionId} {
-      allow read, create, update, delete: if isAuthenticated();
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid || 
+        resource.data.customerId == request.auth.uid || 
+        isAdmin()
+      );
+      allow write: if isAdmin();
     }
 
     // Support Tickets
     match /supportTickets/{ticketId} {
-      allow read, create, update, delete: if isAuthenticated();
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid || 
+        isAdmin()
+      );
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid || 
+        isAdmin()
+      );
+      allow delete: if isAdmin();
     }
 
     match /tickets/{ticketId} {
-      allow read, create, update, delete: if isAuthenticated();
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid || 
+        isAdmin()
+      );
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid || 
+        isAdmin()
+      );
+      allow delete: if isAdmin();
     }
 
     // Settings
     match /settings/{settingId} {
       allow read: if true;
-      allow write: if isAuthenticated();
+      allow write: if isAdmin();
     }
   }
 }

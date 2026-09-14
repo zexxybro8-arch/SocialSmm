@@ -611,28 +611,36 @@ export const CreateOrderPage: React.FC<CreateOrderPageProps> = ({
             </div>
 
             <div className="space-y-1">
-              <h3 className="text-lg font-bold text-white">Order Created Successfully!</h3>
+              <h3 className="text-lg font-bold text-emerald-400 flex items-center justify-center space-x-1.5">
+                <span>✓ Order Successful</span>
+              </h3>
               <p className="text-xs text-zinc-400">
-                Your order has been queued and is processing.
+                Your order has been placed successfully.
               </p>
             </div>
 
-            <div className="rounded-2xl bg-zinc-950/80 border border-zinc-800/80 p-3 space-y-2 text-left text-xs">
-              <div className="flex justify-between">
+            <div className="rounded-2xl bg-zinc-950/80 border border-zinc-800/80 p-3.5 space-y-2 text-left text-xs">
+              <div className="flex justify-between items-center border-b border-zinc-800/60 pb-1.5">
                 <span className="text-zinc-400">Order ID:</span>
-                <span className="font-mono text-zinc-200 font-bold">#{successOrder.id.replace('ORD-', '')}</span>
+                <span className="font-mono text-zinc-200 font-bold">#{successOrder.id}</span>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center border-b border-zinc-800/60 pb-1.5">
                 <span className="text-zinc-400">Service:</span>
-                <span className="text-zinc-200 font-medium truncate max-w-[180px]">{service.name}</span>
+                <span className="text-zinc-200 font-medium truncate max-w-[180px]" title={service.name}>{service.name}</span>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center border-b border-zinc-800/60 pb-1.5">
+                <span className="text-zinc-400">Quantity:</span>
+                <span className="text-white font-bold">{Number(successOrder.quantity || quantity).toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between items-center border-b border-zinc-800/60 pb-1.5">
                 <span className="text-zinc-400">Amount:</span>
-                <span className="text-white font-bold">{Number(quantity).toLocaleString()}</span>
+                <span className="text-emerald-400 font-bold">{BRANDING.CURRENCY_SYMBOL}{(successOrder.amount ?? successOrder.price ?? totalPrice).toFixed(2)}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-zinc-400">Paid:</span>
-                <span className="text-emerald-400 font-bold">{BRANDING.CURRENCY_SYMBOL}{totalPrice.toFixed(2)}</span>
+              <div className="flex justify-between items-center pt-0.5">
+                <span className="text-zinc-400">Status:</span>
+                <span className="px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/20 font-bold text-[11px] capitalize">
+                  {successOrder.status === 'processing' ? 'Processing' : 'Pending'}
+                </span>
               </div>
             </div>
 
@@ -649,7 +657,7 @@ export const CreateOrderPage: React.FC<CreateOrderPageProps> = ({
                 }}
                 className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold text-xs shadow-md transition cursor-pointer"
               >
-                View in Orders
+                View Order
               </button>
               <button
                 type="button"

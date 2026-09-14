@@ -10,8 +10,10 @@ export type OrderStatus =
   | 'paid'
   | 'processing'
   | 'completed'
+  | 'partial'
   | 'cancelled'
-  | 'refunded';
+  | 'refunded'
+  | 'failed';
 
 export type PaymentStatus = 
   | 'pending'
@@ -122,25 +124,38 @@ export interface Service {
 
 // 5. Orders table
 export interface Order {
-  id: string; // e.g. "ORD-9821"
+  id: string; // e.g. "ORD-20260903-000123"
+  userId?: string;
   customerId: string;
   customerName: string;
   customerEmail: string;
+  username?: string;
   serviceId: string;
   serviceName: string;
   serviceCategory: ServiceCategory;
+  link?: string;
   targetAccount: string; // Instagram handle (e.g. "@creatorbrand")
   targetUrl?: string;
   quantity?: number;
+  price?: number;
   totalPrice?: number;
-  customerNotes?: string;
-  requirements: Record<string, string>; // Special instructions, target niche, content themes
   amount: number;
   discountApplied: number;
   finalAmount: number;
+  currency?: string;
   status: OrderStatus;
+  provider?: string;
+  providerOrderId?: string;
+  providerCost?: number;
+  creationType?: 'customer' | 'manual';
+  createdBy?: string;
+  startCount?: number;
+  currentCount?: number;
+  remains?: number;
+  customerNotes?: string;
+  requirements?: Record<string, string>; // Special instructions, target niche, content themes
   paymentId?: string;
-  timeline: OrderTimelineEvent[];
+  timeline?: OrderTimelineEvent[];
   notes?: string;
   createdAt: string;
   updatedAt: string;
@@ -270,6 +285,16 @@ export interface AuditLog {
   details: any;
   ipAddress?: string;
   createdAt: string;
+}
+
+// 15. Fixed Deposit Options
+export interface FixedDepositOption {
+  id: string;
+  amount: number; // Whole INR integer from 1 to 1000000
+  qrImageUrl?: string;
+  active: boolean;
+  createdAt: string;
+  updatedAt?: string;
 }
 
 // 14. Settings table

@@ -24,21 +24,22 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
 
   if (!isOpen) return null;
 
-  const quickAmounts = [100, 250, 500, 1000, 2500];
+  const quickAmounts = [500, 1000, 5200, 10000, 50000, 100000];
 
   const handleTopUp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (amount <= 0) {
-      setError('Please enter a valid amount.');
+    const num = Number(amount);
+    if (isNaN(num) || !Number.isInteger(num) || num < 1 || num > 1000000) {
+      setError('Enter an amount between ₹1 and ₹10,00,000.');
       return;
     }
     setError(null);
     setIsLoading(true);
 
     try {
-      const res = await api.createPayment(amount, method, 'INR');
+      const res = await api.createPayment(num, method, 'INR');
       if (res.newBalance !== undefined) {
-        setSuccessMsg(`Successfully credited ${BRANDING.CURRENCY_SYMBOL}${amount.toFixed(2)} to your balance!`);
+        setSuccessMsg(`Successfully credited ${BRANDING.CURRENCY_SYMBOL}${num.toLocaleString('en-IN')} to your balance!`);
         setTimeout(() => {
           onSuccess(res.newBalance);
           onClose();
